@@ -1,0 +1,14 @@
+# Owned by the app team and read from the repository, like most CI.
+# The agent stage's buildspec is the opposite: it ships with the infrastructure.
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      nodejs: 24
+  build:
+    commands:
+      - cd app && npm ci --no-audit --no-fund && npm test && npm run build
+artifacts:
+  base-directory: app/dist
+  files:
+    - '**/*'

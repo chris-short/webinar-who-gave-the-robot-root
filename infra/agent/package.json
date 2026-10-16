@@ -1,0 +1,12 @@
+{
+  "name": "robot-root-agent-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinned Claude Code runtime for the hardened agent stage. Embedded into the CodeBuild buildspec at synth time.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.301"
+  },
+  "allowScripts": {
+    "@anthropic-ai/claude-code@2.1.301": true
+  }
+}

@@ -1,0 +1,116 @@
+#
+# Agent guardrails, enforced by the PolicyGate pipeline action against the
+# synthesized CloudFormation in each commit. These rules are embedded in the
+# gate's buildspec at deploy time, so a commit cannot weaken them.
+#
+
+let agent_roles = Resources.*[
+    Type == 'AWS::IAM::Role'
+    some Properties.Tags[*] {
+        Key == 'robot-root:component'
+        Value == 'agent'
+    }
+]
+
+let agent_projects = Resources.*[
+    Type == 'AWS::CodeBuild::Project'
+    some Properties.Tags[*] {
+        Key == 'robot-root:component'
+        Value == 'agent'
+    }
+]
+
+let iam_policies = Resources.*[
+    Type in ['AWS::IAM::Policy', 'AWS::IAM::ManagedPolicy']
+]
+
+let roles_with_inline_policies = Resources.*[
+    Type == 'AWS::IAM::Role'
+    Properties.Policies exists
+]
+
+let projects_with_env_vars = Resources.*[
+    Type == 'AWS::CodeBuild::Project'
+    Properties.Environment.EnvironmentVariables exists
+]
+
+# 1. Least privilege: the agent carries a permissions boundary and no
+#    managed policies. Grant explicit statements instead.
+rule agent_role_has_boundary when %agent_roles !empty {
+    %agent_roles.Properties.PermissionsBoundary exists
+    <<
+        Violation: the agent role must have a permissions boundary.
+        Fix: attach robot-root-agent-boundary.
+    >>
+}
+
+rule agent_role_has_no_managed_policies when %agent_roles !empty {
+    %agent_roles.Properties.ManagedPolicyArns empty
+    <<
+        Violation: managed policies (for example AdministratorAccess) are attached to the agent role.
+        Fix: grant only the statements the agent needs (bedrock:InvokeModel on its inference profiles).
+    >>
+}
+
+# 2. No admin-shaped statements anywhere in the app.
+rule no_wildcard_actions when %iam_policies !empty {
+    %iam_policies.Properties.PolicyDocument.Statement[*] {
+        when Effect == 'Allow' {
+            Action[*] not in ['*', '*:*', 'iam:*', 'sts:*', 'organizations:*']
+            <<
+                Violation: an Allow statement grants a wildcard or IAM-wide action.
+            >>
+        }
+    }
+}
+
+rule no_wildcard_inline_actions when %roles_with_inline_policies !empty {
+    %roles_with_inline_policies.Properties.Policies[*].PolicyDocument.Statement[*] {
+        when Effect == 'Allow' {
+            Action[*] not in ['*', '*:*', 'iam:*', 'sts:*', 'organizations:*']
+            <<
+                Violation: an inline role policy grants a wildcard or IAM-wide action.
+            >>
+        }
+    }
+}
+
+# 3. Governance: the agent runs under managed settings, not with permission checks switched off.
+rule agent_permissions_not_bypassed when %agent_projects !empty {
+    %agent_projects.Properties.Source.BuildSpec is_string
+    <<
+        Violation: the agent buildspec must be a literal string owned by the platform, not built from parameters.
+    >>
+    %agent_projects.Properties.Source.BuildSpec != /dangerously-skip-permissions|bypassPermissions|IS_SANDBOX/
+    <<
+        Violation: the agent buildspec disables Claude Code permission checks.
+        Fix: run with --permission-mode dontAsk under /etc/claude-code/managed-settings.json.
+    >>
+    %agent_projects.Properties.Environment.PrivilegedMode != true
+    <<
+        Violation: the agent build runs in privileged (Docker-in-Docker) mode.
+    >>
+}
+
+# 4. Supply chain: no piping a remote script into a shell for the agent runtime.
+rule agent_runtime_is_pinned when %agent_projects !empty {
+    %agent_projects.Properties.Source.BuildSpec != /curl[^\n"]*\|\s*(ba|z)?sh/
+    <<
+        Violation: the agent runtime is installed with curl | sh at whatever version is current.
+        Fix: install from the committed lockfile with npm ci and npm audit signatures.
+    >>
+}
+
+# 5. Secrets: credentials and their pointers do not go in plaintext environment variables.
+rule no_plaintext_secret_env_vars when %projects_with_env_vars !empty {
+    %projects_with_env_vars.Properties.Environment.EnvironmentVariables[*] {
+        when Name == /SECRET|PASSWORD|TOKEN|CREDENTIAL/ {
+            Type != 'PLAINTEXT'
+            <<
+                Violation: a CodeBuild environment variable that looks like a secret is PLAINTEXT
+                and visible to every command in the build, including the agent.
+                Fix: use type SECRETS_MANAGER, and only on the stage that needs it.
+            >>
+        }
+    }
+}

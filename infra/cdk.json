@@ -1,0 +1,23 @@
+{
+  "app": "npx tsx bin/app.ts",
+  "watch": {
+    "include": [
+      "bin/**",
+      "lib/**",
+      "agent/**",
+      "policy/**"
+    ]
+  },
+  "context": {
+    "@aws-cdk/core:checkSecretUsage": true,
+    "@aws-cdk/core:target-partitions": [
+      "aws"
+    ],
+    "@aws-cdk/aws-iam:minimizePolicies": true,
+    "@aws-cdk/aws-s3:createDefaultLoggingPolicy": true,
+    "@aws-cdk/aws-codepipeline:defaultPipelineTypeToV2": true,
+    "@aws-cdk/aws-kms:aliasNameRef": true,
+    "@aws-cdk/customresources:installLatestAwsSdkDefault": false,
+    "@aws-cdk/core:defaultCrossStackReferences": "strong"
+  }
+}

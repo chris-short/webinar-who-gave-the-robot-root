@@ -1,0 +1,28 @@
+{
+  "name": "robot-root-infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CDK app for the Who gave the robot root webinar demo pipeline",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "synth": "cdk synth --strict",
+    "cdk": "cdk"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.273.0",
+    "constructs": "10.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "aws-cdk": "2.1145.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}
