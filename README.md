@@ -89,12 +89,27 @@ You should see JSON with an `Account` (your 12-digit account number) and an `Arn
 
 ### 4. Turn on Claude in Amazon Bedrock
 
-Claude models are available in Bedrock by default. However, Anthropic asks each account to fill in a short use-case form once before the first use.
+Claude models are available in Bedrock by default, but each account has two one-time steps before it can use one:
+
+- Anthropic asks for a short use-case form. If your organization's management account already filled it in, you won't see it.
+- The first call to each model signs the account up for that model through AWS Marketplace, and accepts the model's license terms. Whoever makes that first call needs the `aws-marketplace:Subscribe`, `aws-marketplace:Unsubscribe`, and `aws-marketplace:ViewSubscriptions` permissions. Make this call yourself now. The pipeline's agent is deliberately not allowed to sign up for anything, so its first run would fail.
 
 1. Open the AWS console and set the Region (top right) to **US East (N. Virginia)**.
 2. Search for **Amazon Bedrock** and open it.
 3. Go to **Model catalog**, choose **Claude Opus 5.5**, and open it in the playground.
-4. If a use-case form appears, fill it in and submit. If no form appears, someone in your organization has already done it.
+4. If a use-case form appears, fill it in and submit.
+5. Send a short message, such as "hello", and wait for a reply.
+6. Repeat steps 3 and 5 for **Claude Haiku 4.5**.
+7. Check that both models are ready. Each line should say `AVAILABLE`. Sign-up can take up to 15 minutes.
+
+   ```bash
+   for m in anthropic.claude-opus-5-5 anthropic.claude-haiku-4-5-20251001-v1:0; do
+     aws bedrock get-foundation-model-availability --region us-east-1 --model-id "$m" \
+       --query agreementAvailability.status --output text
+   done
+   ```
+
+If the playground shows an error mentioning `explicit deny in a service control policy`, your organization blocks Claude. See **Organization rules** under "Check before the live session".
 
 The agent uses Claude Opus 5.5 for the review and Claude Haiku 4.5 for small background tasks.
 
@@ -266,7 +281,7 @@ Type `y` when asked. This deletes both stacks, the pipeline, the agent role, the
 | `cdk deploy` mentions bootstrap or `CDKToolkit` | Step 3 was skipped | Run Step 3, then deploy again. |
 | You can't find the pipeline or other resources in the console | The console is showing a different Region | Set the Region selector (top right) to **US East (N. Virginia)**. |
 | **Source** fails with a message about the connection | The GitHub connection isn't approved yet | Do Step 5, then choose **Release change**. |
-| **Review** fails with `AccessDeniedException` mentioning Bedrock | Bedrock use-case form not submitted, or an organization rule blocks Bedrock | Do "Turn on Claude in Amazon Bedrock". If the message says `explicit deny in a service control policy`, ask your AWS organization's admin. |
+| **Review** fails with `AccessDeniedException` mentioning Bedrock | Bedrock use-case form not submitted, the models were never tried in the playground, or an organization rule blocks Bedrock | Do "Turn on Claude in Amazon Bedrock". If the message says `explicit deny in a service control policy`, ask your AWS organization's admin. |
 | **PolicyGate** fails | The change breaks a guardrail rule. That's the gate working. | Read the build logs for lines starting with `Violation:`. |
 | A redeploy fails because `robot-root/orders-db-prod` already exists or is scheduled for deletion | The fake secret from an earlier deploy is still in Secrets Manager's recovery window | Run `aws secretsmanager restore-secret --secret-id robot-root/orders-db-prod`, then `aws secretsmanager delete-secret --secret-id robot-root/orders-db-prod --force-delete-without-recovery`, and deploy again. Do this only for this fake secret. |
 
@@ -305,7 +320,7 @@ The tests build both versions of the demo and check the permissions, pipeline, a
 
 None of this has been run end to end in AWS yet. Do one full rehearsal and confirm:
 
-- **Organization rules.** In the account this was built in, an organization rule (SCP) blocks `bedrock:GetInferenceProfile`. Confirm the agent still starts. If it doesn't, ask the organization's admin.
+- **Organization rules.** Both accounts this was tested in belong to organizations whose rules (SCPs) block Claude on Bedrock, so the demo hasn't run in either one yet. To run it, the organization's admin has to allow `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` for the two Claude models. For the one-time first call in "Turn on Claude in Amazon Bedrock", they also have to allow `aws-marketplace:Subscribe`, `aws-marketplace:Unsubscribe`, and `aws-marketplace:ViewSubscriptions`. Blocking model calls with an SCP until someone has reviewed the license terms is a pattern AWS recommends, so expect it in company accounts. To check an account before you deploy, run `aws iam simulate-principal-policy --policy-source-arn <your user or role ARN> --action-names bedrock:InvokeModel --resource-arns 'arn:aws:bedrock:us-east-1:<account>:inference-profile/us.anthropic.claude-opus-5-5'`. If the result shows `"AllowedByOrganizations": false`, an SCP is blocking it.
 - **The diff step.** The Review step can read the latest commit (`git show HEAD`) from CodeBuild's copy of the repository.
 - **The install.** Claude Code's install step runs under CodeBuild's npm, and `jq` is available on the build machine (`amazonlinux-x86_64-standard:6.0`).
 - **The buildspec size.** CodeBuild accepts the agent's buildspec, which is about 11 KB.
