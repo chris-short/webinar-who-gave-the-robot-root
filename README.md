@@ -233,13 +233,13 @@ The agent's rules are built into the deployed infrastructure, not read from the 
 **Fix it, one step at a time.** Each command below turns on one more guardrail. Each deploy takes a minute or two. After each one, choose **Release change** to run the same commit again.
 
 ```bash
-npx cdk deploy --all -c githubRepo=$REPO -c guardrails=least-privilege
-npx cdk deploy --all -c githubRepo=$REPO -c guardrails=least-privilege,agent-policy
-npx cdk deploy --all -c githubRepo=$REPO -c guardrails=least-privilege,agent-policy,supply-chain
-npx cdk deploy --all -c githubRepo=$REPO -c agentProfile=hardened
+npx cdk deploy --all -c githubRepo=$REPO -c alertEmail=<you@example.com> -c guardrails=least-privilege
+npx cdk deploy --all -c githubRepo=$REPO -c alertEmail=<you@example.com> -c guardrails=least-privilege,agent-policy
+npx cdk deploy --all -c githubRepo=$REPO -c alertEmail=<you@example.com> -c guardrails=least-privilege,agent-policy,supply-chain
+npx cdk deploy --all -c githubRepo=$REPO -c alertEmail=<you@example.com> -c agentProfile=hardened
 ```
 
-The last line turns on all four guardrails. To show exactly what a step changes, run the same command with `diff` instead of `deploy`. During a live session, add `--require-approval never` to skip the `y/n` prompt.
+Use the same email you used in Step 4. A deploy without `-c alertEmail` removes the email alerts, so keep it on every command. If you didn't set one in Step 4, leave it out here too. The last line turns on all four guardrails. To show exactly what a step changes, run the same command with `diff` instead of `deploy`. During a live session, add `--require-approval never` to skip the `y/n` prompt.
 
 **Show the policy check.** With everything on, push a commit that gives the agent more permissions, for example by adding `iam:*` in `infra/lib/agent-access.ts`. The **PolicyGate** action in the Build stage fails, and the change never reaches Approve.
 
