@@ -26,7 +26,11 @@ const EXPECTED_AGENT_EVENT_SOURCES = [
   's3.amazonaws.com',
   'codeconnections.amazonaws.com',
   'codestar-connections.amazonaws.com',
+  // Bedrock checks the model's Marketplace agreement under the agent role while
+  // invoking the model, so these fire on a normal review, not just a breach.
   'aws-marketplace.amazonaws.com',
+  'agreement-marketplace.amazonaws.com',
+  'discovery-marketplace.amazonaws.com',
 ];
 
 export interface TripwireStackProps extends StackProps {

@@ -178,7 +178,12 @@ describe('hardened profile', () => {
       assert.match(JSON.stringify(issuer), /:role\/robot-root-agent"/);
     }
     const outOfBounds = rules.find((r) => r.Properties.Name === 'robot-root-agent-out-of-bounds')!;
-    assert.ok(outOfBounds.Properties.EventPattern.detail.eventSource[0]['anything-but'].includes('bedrock.amazonaws.com'));
+    const allowed = outOfBounds.Properties.EventPattern.detail.eventSource[0]['anything-but'];
+    assert.ok(allowed.includes('bedrock.amazonaws.com'));
+    // Normal Bedrock invocation touches these under the agent role; they must not trip the alarm.
+    for (const source of ['aws-marketplace.amazonaws.com', 'agreement-marketplace.amazonaws.com', 'discovery-marketplace.amazonaws.com']) {
+      assert.ok(allowed.includes(source), `out-of-bounds allow-list is missing ${source}`);
+    }
     tripwire.hasResourceProperties('AWS::CloudTrail::Trail', { IsLogging: true, IsMultiRegionTrail: false });
   });
 });
