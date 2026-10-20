@@ -143,6 +143,16 @@ describe('hardened profile', () => {
     });
   });
 
+  it('keeps variable namespaces apart from artifact names', () => {
+    // CodePipeline rejects this at create time; synth alone doesn't catch it.
+    const stages = Object.values(pipeline.findResources('AWS::CodePipeline::Pipeline'))[0].Properties.Stages;
+    const actions: Record<string, any>[] = stages.flatMap((s: { Actions: Record<string, any>[] }) => s.Actions);
+    const artifacts = new Set(actions.flatMap((a) => (a.OutputArtifacts ?? []).map((o: { Name: string }) => o.Name)));
+    for (const a of actions.filter((a) => a.Namespace)) {
+      assert.ok(!artifacts.has(a.Namespace), `${a.Name} uses namespace "${a.Namespace}", which is also an artifact name`);
+    }
+  });
+
   it('scopes every UseConnection grant to the one repository', () => {
     pipeline.hasResourceProperties('AWS::CodePipeline::Pipeline', {
       Stages: Match.arrayWith([Match.objectLike({

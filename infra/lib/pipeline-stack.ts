@@ -148,7 +148,6 @@ export class PipelineStack extends Stack {
             repo: config.githubRepo.split('/')[1],
             branch: config.branch,
             output: sourceOutput,
-            variablesNamespace: 'Source',
           })],
         },
         {
