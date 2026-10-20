@@ -150,10 +150,10 @@ Later commands use `$REPO` and `$ACCOUNT`. These variables last only until you c
 ### Step 3: Prepare the account for CDK (once per account)
 
 ```bash
-npx cdk bootstrap aws://$ACCOUNT/us-east-1
+npx cdk bootstrap aws://$ACCOUNT/us-east-1 -c githubRepo=$REPO
 ```
 
-This creates a small stack named `CDKToolkit` that CDK uses to upload files during deploys. You only need to do it once per account and Region.
+This creates a small stack named `CDKToolkit` that CDK uses to upload files during deploys. You only need to do it once per account and Region. CDK runs this project's code before bootstrapping, so it needs `githubRepo` here too. If you see `Set -c githubRepo=<owner>/<repo>`, `$REPO` is empty: run the two lines from Step 2 again.
 
 ### Step 4: Deploy the demo in its "before" state
 
