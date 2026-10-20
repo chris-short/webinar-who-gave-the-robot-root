@@ -32,7 +32,7 @@ export interface DemoConfig {
   readonly connectionArn?: string;
   /** Bedrock inference profile ID for the main agent model. */
   readonly agentModel: string;
-  /** Bedrock inference profile ID Claude Code uses for lightweight background calls. */
+  /** Bedrock inference profile ID Claude Code uses for lightweight background calls. Defaults to agentModel. */
   readonly agentSmallModel: string;
   /** Hard spend cap per agent run, passed to --max-budget-usd when agent-policy is on. */
   readonly agentBudgetUsd: number;
@@ -46,12 +46,15 @@ export function loadConfig(node: Node): DemoConfig {
     throw new Error('Set -c githubRepo=<owner>/<repo>');
   }
 
+  // One model for both roles: in the test accounts, Opus 4.5 is the only Claude model the org allows.
+  const agentModel = node.tryGetContext('agentModel') ?? 'us.anthropic.claude-opus-4-5-20251101-v1:0';
+
   return {
     githubRepo,
     branch: node.tryGetContext('branch') ?? 'main',
     connectionArn: node.tryGetContext('connectionArn'),
-    agentModel: node.tryGetContext('agentModel') ?? 'us.anthropic.claude-opus-5-5',
-    agentSmallModel: node.tryGetContext('agentSmallModel') ?? 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    agentModel,
+    agentSmallModel: node.tryGetContext('agentSmallModel') ?? agentModel,
     agentBudgetUsd: Number(node.tryGetContext('agentBudgetUsd') ?? 3),
     guardrails: parseGuardrails(node.tryGetContext('agentProfile'), node.tryGetContext('guardrails')),
     alertEmail: node.tryGetContext('alertEmail'),

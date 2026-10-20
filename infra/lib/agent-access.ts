@@ -11,7 +11,7 @@ export const AGENT_COMPONENT_TAG = { key: 'robot-root:component', value: 'agent'
 
 export interface AgentAccessProps {
   readonly guardrails: ReadonlySet<Guardrail>;
-  /** Bedrock inference profile IDs the agent may invoke, e.g. us.anthropic.claude-opus-5-5. */
+  /** Bedrock inference profile IDs the agent may invoke, e.g. us.anthropic.claude-opus-4-5-20251101-v1:0. */
   readonly modelProfileIds: readonly string[];
   readonly connectionArn: string;
   readonly githubRepo: string;
@@ -121,8 +121,10 @@ export class AgentAccess extends Construct {
  */
 export function bedrockInvokeStatements(stack: Stack, profileIds: readonly string[]): iam.PolicyStatement[] {
   const { account, region, partition } = stack;
-  const profileArns = profileIds.map((id) => `arn:${partition}:bedrock:${region}:${account}:inference-profile/${id}`);
-  const modelArns = profileIds.map((id) => `arn:${partition}:bedrock:*::foundation-model/${foundationModelId(id)}`);
+  // The main and small models are often the same profile.
+  const ids = [...new Set(profileIds)];
+  const profileArns = ids.map((id) => `arn:${partition}:bedrock:${region}:${account}:inference-profile/${id}`);
+  const modelArns = ids.map((id) => `arn:${partition}:bedrock:*::foundation-model/${foundationModelId(id)}`);
   const invoke = ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'];
 
   return [
@@ -133,17 +135,17 @@ export function bedrockInvokeStatements(stack: Stack, profileIds: readonly strin
       resources: modelArns,
       conditions: { StringEquals: { 'bedrock:InferenceProfileArn': profileArns } },
     }),
-    // Claude Code resolves pinned profiles at startup. Note: an Organizations SCP in the
-    // target account currently denies GetInferenceProfile; see README.
+    // Claude Code resolves pinned profiles at startup. Some organizations' SCPs deny
+    // GetInferenceProfile; see "Organization rules" in the README.
     new iam.PolicyStatement({ sid: 'ResolveInferenceProfile', actions: ['bedrock:GetInferenceProfile'], resources: profileArns }),
   ];
 }
 
-/** us.anthropic.claude-opus-5-5 -> anthropic.claude-opus-5-5 */
+/** us.anthropic.claude-opus-4-5-20251101-v1:0 -> anthropic.claude-opus-4-5-20251101-v1:0 */
 export function foundationModelId(profileId: string): string {
   const match = /^(?:us|eu|apac|us-gov|global|jp|au|ca)\.(.+)$/.exec(profileId);
   if (!match) {
-    throw new Error(`Expected a cross-Region inference profile ID like us.anthropic.claude-opus-5-5, got "${profileId}"`);
+    throw new Error(`Expected a cross-Region inference profile ID like us.anthropic.claude-opus-4-5-20251101-v1:0, got "${profileId}"`);
   }
   return match[1];
 }

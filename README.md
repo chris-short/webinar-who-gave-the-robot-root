@@ -96,22 +96,20 @@ Claude models are available in Bedrock by default, but each account has two one-
 
 1. Open the AWS console and set the Region (top right) to **US East (N. Virginia)**.
 2. Search for **Amazon Bedrock** and open it.
-3. Go to **Model catalog**, choose **Claude Opus 5.5**, and open it in the playground.
+3. Go to **Model catalog**, choose **Claude Opus 4.5**, and open it in the playground.
 4. If a use-case form appears, fill it in and submit.
 5. Send a short message, such as "hello", and wait for a reply.
-6. Repeat steps 3 and 5 for **Claude Haiku 4.5**.
-7. Check that both models are ready. Each line should say `AVAILABLE`. Sign-up can take up to 15 minutes.
+6. Check that the model is ready. The command should print `AVAILABLE`. Sign-up can take up to 15 minutes.
 
    ```bash
-   for m in anthropic.claude-opus-5-5 anthropic.claude-haiku-4-5-20251001-v1:0; do
-     aws bedrock get-foundation-model-availability --region us-east-1 --model-id "$m" \
-       --query agreementAvailability.status --output text
-   done
+   aws bedrock get-foundation-model-availability --region us-east-1 \
+     --model-id anthropic.claude-opus-4-5-20251101-v1:0 \
+     --query agreementAvailability.status --output text
    ```
 
-If the playground shows an error mentioning `explicit deny in a service control policy`, your organization blocks Claude. See **Organization rules** under "Check before the live session".
+If the playground shows an error mentioning `explicit deny in a service control policy` or `AWS Marketplace actions`, your organization blocks Claude. See **Organization rules** under "Check before the live session".
 
-The agent uses Claude Opus 5.5 for the review and Claude Haiku 4.5 for small background tasks.
+The agent uses Claude Opus 4.5 for the review and for Claude Code's small background tasks. To use a cheaper model for the background tasks, turn it on with steps 3 to 5, then add `-c agentSmallModel=<inference profile ID>` when you deploy.
 
 ### 5. Put this project on GitHub
 
@@ -320,11 +318,10 @@ The tests build both versions of the demo and check the permissions, pipeline, a
 
 None of this has been run end to end in AWS yet. Do one full rehearsal and confirm:
 
-- **Organization rules.** Both accounts this was tested in belong to organizations whose rules (SCPs) block Claude on Bedrock, so the demo hasn't run in either one yet. To run it, the organization's admin has to allow `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` for the two Claude models. For the one-time first call in "Turn on Claude in Amazon Bedrock", they also have to allow `aws-marketplace:Subscribe`, `aws-marketplace:Unsubscribe`, and `aws-marketplace:ViewSubscriptions`. Blocking model calls with an SCP until someone has reviewed the license terms is a pattern AWS recommends, so expect it in company accounts. To check an account before you deploy, run `aws iam simulate-principal-policy --policy-source-arn <your user or role ARN> --action-names bedrock:InvokeModel --resource-arns 'arn:aws:bedrock:us-east-1:<account>:inference-profile/us.anthropic.claude-opus-5-5'`. If the result shows `"AllowedByOrganizations": false`, an SCP is blocking it.
+- **Organization rules.** Company accounts often use organization rules (SCPs) to block Bedrock model calls until someone has reviewed the license terms. AWS recommends this pattern, so expect it. The demo was tried in two such accounts. One blocks every model tried, so the demo can't run there. The other allows Claude Opus 4.5 but blocks the AWS Marketplace sign-up for any other model, which is why the demo uses Opus 4.5 for both the review and the background tasks. To run the demo in an account like that, the organization's admin has to allow `bedrock:InvokeModel`, `bedrock:InvokeModelWithResponseStream`, and `bedrock:GetInferenceProfile` for the Claude model you use. Unless step 6 of "Turn on Claude in Amazon Bedrock" already prints `AVAILABLE`, they also have to allow `aws-marketplace:Subscribe`, `aws-marketplace:Unsubscribe`, and `aws-marketplace:ViewSubscriptions` for that step's one-time first call. A model call that fails with `is not available for this account` isn't an SCP; the error points you to AWS Sales instead. To check an account before you deploy, run `aws iam simulate-principal-policy --policy-source-arn <your user or role ARN> --action-names bedrock:InvokeModel --resource-arns 'arn:aws:bedrock:us-east-1:<account>:inference-profile/us.anthropic.claude-opus-4-5-20251101-v1:0'`. If the result shows `"AllowedByOrganizations": false`, an SCP is blocking it.
 - **The diff step.** The Review step can read the latest commit (`git show HEAD`) from CodeBuild's copy of the repository.
 - **The install.** Claude Code's install step runs under CodeBuild's npm, and `jq` is available on the build machine (`amazonlinux-x86_64-standard:6.0`).
 - **The buildspec size.** CodeBuild accepts the agent's buildspec, which is about 11 KB.
 - **The spending cap.** `--max-budget-usd` takes effect when Claude Code runs on Bedrock.
 - **Alert timing.** Alarms can lag a few minutes, so trigger the "break it" moment early or have a recording ready.
 - **False alarms.** Check whether the out-of-bounds alarm fires during a normal review. If it does, adjust `EXPECTED_AGENT_EVENT_SOURCES` in `infra/lib/tripwire-stack.ts`.
-ç

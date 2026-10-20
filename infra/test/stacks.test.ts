@@ -52,9 +52,16 @@ describe('config', () => {
     assert.throws(() => parseGuardrails('medium'), /Unknown agentProfile/);
   });
   it('strips the geography prefix from inference profile IDs', () => {
-    assert.equal(foundationModelId('us.anthropic.claude-opus-5-5'), 'anthropic.claude-opus-5-5');
+    assert.equal(foundationModelId('us.anthropic.claude-opus-4-5-20251101-v1:0'), 'anthropic.claude-opus-4-5-20251101-v1:0');
     assert.equal(foundationModelId('global.anthropic.claude-haiku-4-5-20251001-v1:0'), 'anthropic.claude-haiku-4-5-20251001-v1:0');
-    assert.throws(() => foundationModelId('anthropic.claude-opus-5-5'), /cross-Region inference profile/);
+    assert.throws(() => foundationModelId('anthropic.claude-opus-4-5-20251101-v1:0'), /cross-Region inference profile/);
+  });
+  it('uses the main model for background calls unless told otherwise', () => {
+    const config = (context: Record<string, string>) =>
+      loadConfig(new App({ context: { githubRepo: 'example-org/robot-root', ...context } }).node);
+    assert.equal(config({}).agentSmallModel, 'us.anthropic.claude-opus-4-5-20251101-v1:0');
+    assert.equal(config({ agentModel: 'us.anthropic.other' }).agentSmallModel, 'us.anthropic.other');
+    assert.equal(config({ agentSmallModel: 'us.anthropic.small' }).agentSmallModel, 'us.anthropic.small');
   });
 });
 
@@ -102,9 +109,12 @@ describe('hardened profile', () => {
     const statements = Object.values(policies).flatMap((p) => p.Properties.PolicyDocument.Statement);
     const bedrock = statements.filter((s) => JSON.stringify(s.Action).includes('bedrock:'));
     const resources = JSON.stringify(bedrock.map((s) => s.Resource));
-    assert.match(resources, /inference-profile\/us\.anthropic\.claude-opus-5-5/);
-    assert.match(resources, /foundation-model\/anthropic\.claude-opus-5-5/);
+    assert.match(resources, /inference-profile\/us\.anthropic\.claude-opus-4-5-20251101-v1:0/);
+    assert.match(resources, /foundation-model\/anthropic\.claude-opus-4-5-20251101-v1:0/);
     assert.doesNotMatch(resources, /foundation-model\/anthropic\.\*/);
+    // The default main and small models are the same profile, listed once.
+    const viaProfile = bedrock.find((s) => s.Sid === 'InvokeViaInferenceProfile');
+    assert.equal([viaProfile?.Resource].flat().length, 1);
     const routed = bedrock.find((s) => s.Sid === 'InvokeRoutedFoundationModel');
     assert.ok(routed?.Condition?.StringEquals?.['bedrock:InferenceProfileArn']);
     for (const s of statements) {
