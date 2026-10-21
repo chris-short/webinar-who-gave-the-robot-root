@@ -109,6 +109,7 @@ export class AgentAccess extends Construct {
       }
     } else {
       // "It kept failing with AccessDenied, so we gave it admin."
+      // TODO: Lockdown agent access
       this.role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AdministratorAccess'));
     }
   }
