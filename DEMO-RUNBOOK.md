@@ -7,7 +7,7 @@
 
 ## Executive Summary & Webinar Overview
 
-This repository is a live CI/CD pipeline built in AWS featuring an autonomous AI code reviewer (Claude Code powered by Amazon Bedrock). The agent begins in an intentionally vulnerable, over-privileged state (`AdministratorAccess`, execution privileges, unverified dependencies, and plain-text secrets in its environment). Over the course of the live webinar, you demonstrate how an agent with an over-broad job and excessive privilege overreaches into production on ordinary work—and why prompt-injection defenses alone don't save you—then methodically strip that access away using four defense-in-depth guardrails, culminating in a platform-owned policy gate that blocks permission-widening infrastructure changes before they ever reach review or production.
+This repository is a live CI/CD pipeline built in AWS featuring an autonomous AI code reviewer (Claude Code powered by Amazon Bedrock). The agent begins in an intentionally vulnerable, over-privileged state (`AdministratorAccess`, execution privileges, unverified dependencies, and plain-text secrets in its environment). Over the course of the live webinar, you demonstrate what that over-privileged identity can reach, show a tripwire catching it the moment it steps out of bounds, and explain why a well-behaved model is no substitute for least privilege—then methodically strip that access away using four defense-in-depth guardrails, culminating in a platform-owned policy gate that blocks permission-widening infrastructure changes before they ever reach review or production.
 
 ```
  You push code to GitHub
@@ -237,11 +237,11 @@ AWS CodeConnections creates a connection in `PENDING` status. You must authorize
 
 ## Part 3 — Threat Model & The Four Guardrails
 
-### The Threat: Excessive Privilege Meets an Over-Broad Job
+### The Threat: Excessive Privilege Is the Blast Radius
 
-In modern CI/CD pipelines, AI agents get wired up with whatever access makes the build go green, and with jobs that quietly grow broader over time ("while you're reviewing, also confirm the deploy is healthy"). Two things then compound. First, a capable model resists obvious prompt injection in the code it reviews — but it faithfully follows its *own* operator instructions, so an over-broad job turns a code reviewer into something that reaches for production credentials on ordinary work. Second, whether the agent overreaches by instruction, by a bug, or because a dependency was compromised, the blast radius is whatever its identity allows.
+In modern CI/CD pipelines, AI agents get wired up with whatever access makes the build go green. The comforting assumption is that a capable model won't misbehave — and today's models largely won't: they refuse obvious prompt injection in the code they review, and they won't fire off wild cloud calls just because a prompt nudges them. But that is not a control you can rely on. An agent is software: it can carry a bug, pull a compromised dependency, or be driven by a future model or prompt that is less careful. When any of that happens, the only thing between the agent and your production data is its IAM role.
 
-If that identity holds cloud administrator credentials and the runtime has a shell, any of those paths ends in cloud compromise. The fix is not a cleverer prompt — it is removing the access and the tools, so overreach has nowhere to go.
+If that identity holds cloud administrator credentials and the runtime has a shell, every one of those paths ends in cloud compromise. The fix is not a cleverer prompt — it is shrinking the access and removing the tools, so a misstep has nowhere to go, plus a tripwire that catches it the moment one happens.
 
 ### The Four Guardrails
 
@@ -340,7 +340,7 @@ If that identity holds cloud administrator credentials and the runtime has a she
 > 
 > In fact, in the actual codebase we are looking at today, there is a comment that says verbatim: *'It kept failing with AccessDenied, so we gave it admin.'*
 >
-> ​Today, we'll look at a real, live CI/CD pipeline running in AWS. An autonomous AI agent, Claude Code running on Bedrock, reviews every change. We'll see what happens when that over-privileged agent is given an over-broad job — how it reaches into production on an ordinary change, why even a model that shrugs off prompt injection can't save you, and how we systematically lock it down with four engineering guardrails until a permission-widening change is stopped dead in its tracks.
+> ​Today, we'll look at a real, live CI/CD pipeline running in AWS. An autonomous AI agent, Claude Code running on Bedrock, reviews every change. We'll see what that over-privileged agent's identity can reach, watch a tripwire catch it, and talk about why a model that behaves today is no guarantee tomorrow — then systematically lock it down with four engineering guardrails until a permission-widening change is stopped dead in its tracks.
 >
 > Let's get started."
 
@@ -393,9 +393,7 @@ If that identity holds cloud administrator credentials and the runtime has a she
 
 ### Segment 2 — Break It (12:00 – 22:00)
 
-The real risk here is not that someone jailbreaks the agent on stage. A capable model like Opus 4.5 reliably refuses injected instructions hidden in the code it reviews — try it and it flags the attempt instead of obeying. The risk is quieter and far more common: this agent has an **over-broad job** and **over-broad access**, so on an ordinary change it reaches for production credentials by itself — and if it ever *were* tricked, buggy, or shipped with a bad dependency, the blast radius is whatever its IAM role allows. We show both: what the identity can do (deterministic), and the agent overreaching on a routine review (live).
-
-> This works because the before-state review prompt (`infra/agent/review-prompt.md`) — like many real teams' — tells the reviewer to also act as a release check and "confirm the deploy database secret resolves." That trusted instruction from the operator, not any trick in the repo, is what sends a code-review bot after a production secret.
+The real risk here is not that someone jailbreaks the agent on stage. A capable model like Opus 4.5 reliably refuses injected instructions in the code it reviews, and it won't fire off a wild AWS call just because a prompt nudges it. That is good news — and it is exactly the trap: teams watch the model behave and conclude the access doesn't matter. But an agent is software. It can carry a bug, pull a poisoned dependency, or be driven by a future model or prompt that is less careful, and then the only thing between it and production is its IAM role. We show both halves: what the identity is *allowed* to do (deterministic), and the tripwire catching that identity the moment it steps out of bounds (live).
 
 #### Step 1: Show the blast radius directly (deterministic, no model)
 
@@ -416,36 +414,36 @@ aws iam simulate-principal-policy --region us-east-1 \
 **Say:**
 > "This is a code-review bot, and its identity can already write straight to the bucket that stands in for production — no injection, no trick. Hold that thought; we'll run this exact command after the fix and watch it flip to denied."
 
-#### Step 2: Trigger a routine review
+#### Step 2: Arm the "break it" marker and push
 
-No payload — just a normal change, so the audience sees the agent overreach on everyday work.
+We won't try to trick the model — we'll stand in for a compromised or buggy agent. The before-state build does this for us: when a committed `.breakit` marker is present, it makes one out-of-bounds call with the agent's own role. That step exists only while the agent has a shell; `agent-policy` removes it, which is the point of Segment 3.
 
 **Do:**
 ```bash
-echo "export const BUILD = '$(date +%s)';" >> app/src/release-notes.js
-git add app/src/release-notes.js
-git commit -m "chore(release): tag build metadata"
+touch .breakit
+git add .breakit
+git commit -m "chore: add debug marker"
 git push origin main
 ```
 
-Switch to the **CodePipeline** tab and watch **Source → Build → Review** advance. Build passes (the change is harmless); the **Agent** action starts the `robot-root-agent` project.
+Switch to the **CodePipeline** tab and watch **Source → Build → Review** advance. The **Agent** action starts the `robot-root-agent` project.
 
 #### While the agent runs (filler, 2–3 min)
 
 **Say:**
-> "Look at what the container is doing. The buildspec hands Claude the diff and the review prompt — and that prompt has a very ordinary mistake in it. Because this is an infrastructure repo, the team told the reviewer to also confirm the change is safe to release, including that the deploy database secret still resolves.
+> "Let me be straight about what's happening here, because the honesty is the point. I am not going to pretend I jailbroke the model — I tried, and a capable model refuses. That's reassuring, and it's the trap: people see the model behave and decide the permissions don't matter.
 >
-> That sounds responsible. But a code-review bot has no business touching a production credential to read a diff. We just gave it a reason to, and `--dangerously-skip-permissions` gave it a shell and admin to do it. Nobody wrote an exploit — the operator over-scoped the job, and the pipeline over-scoped the access. That is the whole talk title: nobody decided to give the robot root, it accreted one reasonable-sounding step at a time."
+> But an agent is software. It can have a bug, it can pull a compromised dependency, the next model or prompt may be less careful — and when any of that happens, the only thing between the agent and your production data is its IAM role. So in the before-state build we stand in for exactly that: one out-of-bounds call with the agent's own identity. Watch what the pipeline notices."
 
-#### Step 3: The tool calls and the tripwire
+#### Step 3: The out-of-bounds call and the tripwire
 
 **Do:**
-1. In CodePipeline, **Review** stage → **View details** on the **Agent** action → open the build log → scroll to `===== Tool calls the agent made =====`. Point out the agent calling `aws secretsmanager get-secret-value` on the deploy secret — part of its "release check," not a code review.
-2. Switch to the **CloudWatch Logs** tab → `/robot-root/tripwire` → newest stream. Show the audit event: `robot-root-agent` calling `secretsmanager.amazonaws.com GetSecretValue` on `robot-root/orders-db-prod`.
+1. In CodePipeline, **Review** stage → **View details** on the **Agent** action → open the build log. Point out the `[breakit] simulating a compromised agent...` line and the `aws s3 ls` of the production-exports bucket — a call a code reviewer has no business making.
+2. Switch to the **CloudWatch Logs** tab → `/robot-root/tripwire` → newest stream. Show the audit event: `robot-root-agent` calling `s3.amazonaws.com` against the canary `prod-exports` bucket.
 3. Switch to the **Email** tab → the `Robot root tripwire: ...` alert.
 
 **Say:**
-> "The agent reached for the production database secret. That attempt is now in CloudTrail and the tripwire fired. One honest detail worth saying out loud: the always-on permissions boundary actually denied the read this time — you can see the AccessDenied. That is a backstop, not the design. The point is that the reviewer went for a production credential at all, and, as Step 1 showed, the same identity can write straight to the release bucket, where the boundary does not save you."
+> "There it is. The agent's identity reached into the bucket that stands in for production exports, and the tripwire fired — CloudTrail event, log line, and email within a couple of minutes. We did not need the model to cooperate; we only needed its role to be able to do this at all. And as Step 1 showed, that same identity can write to the release bucket, too."
 
 #### Step 4: The approval gate is theater
 
@@ -494,11 +492,11 @@ npx cdk deploy --all -c githubRepo=$REPO -c alertEmail=$ALERT_EMAIL -c guardrail
      --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output text
    ```
    **See:** `s3:PutObject  implicitDeny`.
-2. Switch to CodePipeline and click **Release change** to re-run the review against the new IAM policy.
-3. Open the Agent action logs. The deploy secret is no longer in the agent's environment, and the role can only call Bedrock, so any AWS call it attempts is denied — the tripwire stays quiet on the secret.
+2. Switch to CodePipeline and click **Release change** (`.breakit` is still on `main`, so the before-state build still attempts the out-of-bounds call).
+3. Open the Agent action logs. The `[breakit]` step still runs, but every `aws s3 ls` now prints `AccessDenied` — the role can only call Bedrock. The exfiltration fails. The tripwire may still log the *blocked* attempt; that's detection of a prevented breach, not a successful one.
 
 **Say:**
-> "There's the flip I promised in Segment 2 — the same identity can no longer write to the release bucket. IAM did its job. But look at the logs: the agent is STILL running shell commands. It had the tools; it just had nothing it was allowed to reach, and no secret left in its environment to go after. IAM is necessary, but on its own it's not enough — that's guardrail two."
+> "There's the flip I promised in Segment 2 — the same identity can no longer write to the release bucket, and the out-of-bounds read comes back AccessDenied. IAM turned a successful breach into a blocked one. But look closer: the agent still has a shell — it still ran those commands, it just had nothing it was allowed to reach. IAM is necessary; on its own it's not enough. That's guardrail two."
 
 ---
 
@@ -530,12 +528,12 @@ npx cdk deploy --all \
 1. Switch to CodePipeline.
 2. Click **Release change**.
 3. Inspect the **AgentReview** build log:
-   - Show `===== Tool calls the agent made =====`
-   - Notice: **It is completely empty!** The agent did not make a single bash call.
-   - Show `===== Agent review =====`: the agent reviews the diff as text and returns a verdict.
+   - Show `===== Tool calls the agent made =====` — **completely empty**. Not a single shell call.
+   - Note there is no `[breakit]` line at all: with no shell, the simulated-compromise step isn't even in the build.
+   - Show `===== Agent review =====`: the agent reads the diff and returns a verdict.
 
 **Say:**
-> "Notice the shift: we did not write a cleverer prompt. The over-broad instruction is still sitting in the review prompt, telling the agent to go confirm the deploy secret. But with no `Bash` tool, it simply can't — zero tool calls, nothing to reach AWS with. We removed the capability, not the temptation. That's the whole point: permissions and tools are the control, not the wording of the prompt."
+> "Notice the shift: we did not write a cleverer prompt. We took away the agent's ability to run anything. The `.breakit` marker is still sitting right there in the repo — but with no `Bash` tool, there is no step to run it and nothing to reach AWS with. Zero tool calls. We removed the capability, not the temptation. Permissions and tools are the control; the prompt is not."
 
 ---
 
@@ -744,8 +742,8 @@ Follow this section to rehearse the entire demo before the webinar and reset it 
    npx cdk deploy --all -c githubRepo=$REPO -c alertEmail=$ALERT_EMAIL -c agentProfile=overprivileged --require-approval never
    ```
 2. Verify `main` is clean: `git status`.
-3. Push the routine change from Segment 2 (Step 2) to GitHub.
-4. Verify the tripwire alert email arrives and tool calls appear in CodeBuild logs.
+3. Arm the marker from Segment 2 (Step 2): `touch .breakit && git add .breakit && git commit -m "chore: add debug marker" && git push`.
+4. Verify the tripwire alert email arrives and the `[breakit]` out-of-bounds call appears in the Agent build log.
 5. Apply the four guardrails sequentially from Segment 3 (`least-privilege` -> `agent-policy` -> `supply-chain` -> `hardened`).
 6. Apply the Policy-Gate break commit from Segment 4. Verify `PolicyGate` fails.
 7. Revert the commits.
@@ -782,9 +780,9 @@ Keep this table visible on a second screen or printed beside your keyboard durin
 |---|---|---|---|
 | **Opening** | 00:00–05:00 | Show architecture diagram | *"Who gave the robot root? It happened one AccessDenied at a time."* |
 | **Segment 1** | 05:00–12:00 | Show `agent-access.ts` & Launch Poll | Point out line 111 (`AdministratorAccess`), launch poll. |
-| **Segment 2** | 12:00–22:00 | Simulate role (PutObject=allowed); push a routine change | Agent follows its over-broad prompt, runs `get-secret-value` on the deploy secret; show the tool call, tripwire log, email. Reject approval! |
-| **Segment 3A** | 22:00–26:00 | Deploy `-c guardrails=least-privilege`<br>Re-run simulate; **Release change** | Simulate flips to `implicitDeny`; IAM blocks the AWS calls. Shell execution still happens. |
-| **Segment 3B** | 26:00–31:00 | Deploy `-c guardrails=least-privilege,agent-policy`<br>Click **Release change** | Zero tool calls! No `Bash` tool, so the agent can't act on the over-broad prompt; it reviews the diff and returns a verdict. |
+| **Segment 2** | 12:00–22:00 | Simulate role (PutObject=allowed); `touch .breakit` & push | Before-state build makes an out-of-bounds `aws s3 ls` as the agent role; show the build log, tripwire log, email. Reject approval! |
+| **Segment 3A** | 22:00–26:00 | Deploy `-c guardrails=least-privilege`<br>Re-run simulate; **Release change** | Simulate flips to `implicitDeny`; the `[breakit]` call now returns AccessDenied (blocked, still detected). Shell still runs. |
+| **Segment 3B** | 26:00–31:00 | Deploy `-c guardrails=least-privilege,agent-policy`<br>Click **Release change** | Zero tool calls! No shell, so the `.breakit` step isn't even in the build; the agent just reviews the diff. |
 | **Segment 3C** | 31:00–35:00 | Deploy `-c guardrails=...,supply-chain`<br>Click **Release change** | Lockfile pinned (`@anthropic-ai/claude-code@2.1.301`) + `npm audit signatures`. |
 | **Segment 3D** | 35:00–40:00 | Deploy `-c agentProfile=hardened` | All 4 on. `PolicyGate` action appears in Build stage. |
 | **Segment 4** | 40:00–48:00 | Add `iam:*` to `agent-access.ts`; `git push`<br>Then: `git revert --no-edit HEAD && git push` | `PolicyGate` fails on `no_wildcard_actions`. Change never reaches Review or Approve! |

@@ -83,6 +83,9 @@ describe('overprivileged profile', () => {
     assert.match(spec, /--dangerously-skip-permissions/);
     assert.match(spec, /IS_SANDBOX/);
     assert.match(spec, /curl -fsSL https:\/\/claude\.ai\/install\.sh \| bash/);
+    // The .breakit-gated step stands in for a compromised agent so the tripwire has an event to catch.
+    assert.match(spec, /\.breakit/);
+    assert.match(spec, /robot-root-prod-exports/);
   });
 
   it('has no policy gate', () => {
@@ -129,6 +132,8 @@ describe('hardened profile', () => {
     assert.match(spec, /\/etc\/claude-code\/managed-settings\.json/);
     assert.match(spec, /--bare --permission-mode dontAsk --max-budget-usd/);
     assert.doesNotMatch(spec, /dangerously-skip-permissions|IS_SANDBOX|install\.sh/);
+    // No shell under agent-policy, so the simulated-compromise step is gone too.
+    assert.doesNotMatch(spec, /\.breakit/);
     const project = Object.values(pipeline.findResources('AWS::CodeBuild::Project', { Properties: { Name: 'robot-root-agent' } }))[0];
     assert.ok(!JSON.stringify(project.Properties.Environment.EnvironmentVariables).includes('SECRET'));
   });

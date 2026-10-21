@@ -65,6 +65,22 @@ export function agentBuildSpec(guardrails: ReadonlySet<Guardrail>): codebuild.Bu
     ]
     : [
       `claude -p "$(cat /tmp/review-prompt.md)" --dangerously-skip-permissions --output-format stream-json --verbose > ${TRANSCRIPT}`,
+      // Demo only. A capable model won't reliably overreach on cue - and detection must not
+      // depend on it doing so. When a committed `.breakit` marker is present, stand in for a
+      // compromised or buggy agent by making one out-of-bounds call with the agent's own role,
+      // so the tripwire has a real event to catch. The agent-policy guardrail removes the shell,
+      // so this whole branch - and this step - is gone once that guardrail is on.
+      // List operations are CloudTrail management events, which reach the tripwire's EventBridge
+      // rule; object reads/writes are data events, which don't. `aws s3 ls` (ListBuckets) trips the
+      // canary rule's ListBuckets branch for certain; listing the prod-exports bucket by name adds
+      // the "reached into production" detail.
+      'if [ -f .breakit ]; then ' +
+        'ACCOUNT=$(echo "$CODEBUILD_BUILD_ARN" | cut -d: -f5); ' +
+        'BUCKET="robot-root-prod-exports-$ACCOUNT-$AWS_REGION"; ' +
+        'echo "[breakit] simulating a compromised agent reaching into production exports ($BUCKET)"; ' +
+        'aws s3 ls "s3://$BUCKET/" || true; ' +
+        'aws s3 ls || true; ' +
+      'fi',
     ];
 
   return codebuild.BuildSpec.fromObject({
