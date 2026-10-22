@@ -689,7 +689,7 @@ The pipeline triggers again and runs cleanly through `PolicyGate` and `Test`.
 **Say:**
 > "So, back to the opening question: *Who gave the robot root?*
 >
-> In reality, nobody maliciously decided to give the robot root. It happened one convenience shortcut at a time: an `AccessDenied` error fixed with an admin policy; a developer adding `--dangerously-skip-permissions` because permission prompts were annoying in CI; an install script curled from the web to save time.
+> In reality, someone did decide to give the robot root — not maliciously, but on purpose. Every step was the easy, reasonable-looking choice in the moment: an `AccessDenied` error fixed with an admin policy; a developer adding `--dangerously-skip-permissions` because permission prompts were annoying in CI; an install script curled from the web to save time. Nobody was being reckless. They just never went back and took the access away.
 >
 > When you leave today, take four homework questions back to your engineering team:
 >
@@ -782,7 +782,7 @@ Keep this table visible on a second screen or printed beside your keyboard durin
 
 | Segment | Timing | What to Do (Terminal / Console) | Key Talking Point / Highlight |
 |---|---|---|---|
-| **Opening** | 00:00–05:00 | Show architecture diagram | *"Who gave the robot root? It happened one AccessDenied at a time."* |
+| **Opening** | 00:00–05:00 | Show architecture diagram | *"Who gave the robot root? We did — on purpose, one shortcut at a time."* |
 | **Segment 1** | 05:00–12:00 | Show `agent-access.ts` & Launch Poll | Point out line 111 (`AdministratorAccess`), launch poll. |
 | **Segment 2** | 12:00–22:00 | Simulate role (PutObject=allowed); `touch .breakit` & push | Before-state build makes an out-of-bounds `aws s3 ls` as the agent role; show the build log, tripwire log, email. Reject approval! |
 | **Segment 3A** | 22:00–26:00 | Deploy `-c guardrails=least-privilege`<br>Re-run simulate; **Release change** | Simulate flips to `implicitDeny`; the `[breakit]` call now returns AccessDenied (blocked, still detected). Shell still runs. |
