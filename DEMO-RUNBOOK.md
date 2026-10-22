@@ -700,7 +700,7 @@ The pipeline triggers again and runs cleanly through `PolicyGate` and `Test`.
 >
 > Remember: Prompts are guidance. Cloud permissions, tool restrictions, and policy gates are controls.
 >
-> Everything you saw today is open source and available in the GitHub repository. Thank you for your time, and let's open the floor for questions."
+> Thank you for your time, and let's open the floor for questions."
 
 ---
 
