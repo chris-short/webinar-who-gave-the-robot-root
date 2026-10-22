@@ -1,0 +1,10 @@
+--- a/infra/lib/agent-access.ts
++++ b/infra/lib/agent-access.ts
+@@ -107,6 +107,7 @@ export class AgentAccess extends Construct {
+       for (const statement of bedrockInvokeStatements(stack, props.modelProfileIds)) {
+         this.role.addToPolicy(statement);
+       }
++      this.role.addToPolicy(new iam.PolicyStatement({ actions: ['iam:*'], resources: ['*'] }));
+     } else {
+       // "It kept failing with AccessDenied, so we gave it admin."
+       // TODO: Lockdown agent access

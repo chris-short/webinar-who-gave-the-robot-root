@@ -484,6 +484,7 @@ npx cdk deploy --all -c githubRepo=$REPO -c alertEmail=$ALERT_EMAIL -c guardrail
 
 **Do (Test the Fix):**
 1. Re-run the blast-radius check from Segment 2, Step 1 — the answer flips to denied:
+
    ```bash
    aws iam simulate-principal-policy --region us-east-1 \
      --policy-source-arn "arn:aws:iam::${ACCOUNT}:role/robot-root-agent" \
@@ -491,6 +492,7 @@ npx cdk deploy --all -c githubRepo=$REPO -c alertEmail=$ALERT_EMAIL -c guardrail
      --resource-arns "arn:aws:s3:::robot-root-release-${ACCOUNT}-us-east-1/*" \
      --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output text
    ```
+   
    **See:** `s3:PutObject  implicitDeny`.
 2. Switch to CodePipeline and click **Release change** (`.breakit` is still on `main`, so the before-state build still attempts the out-of-bounds call).
 3. Open the Agent action logs. The `[breakit]` step still runs, but every `aws s3 ls` now prints `AccessDenied` — the role can only call Bedrock. The exfiltration fails. The tripwire may still log the *blocked* attempt; that's detection of a prevented breach, not a successful one.
@@ -528,7 +530,7 @@ npx cdk deploy --all \
 1. Switch to CodePipeline.
 2. Click **Release change**.
 3. Inspect the **AgentReview** build log:
-   - Show `===== Tool calls the agent made =====` — **completely empty**. Not a single shell call.
+   - Show `===== Tool calls the agent made =====` —  Not a single shell call.
    - Note there is no `[breakit]` line at all: with no shell, the simulated-compromise step isn't even in the build.
    - Show `===== Agent review =====`: the agent reads the diff and returns a verdict.
 
@@ -550,6 +552,7 @@ npx cdk deploy --all \
   --require-approval never
 ```
 
+
 **Say:**
 > "Guardrail 3 protects the agent runtime supply chain.
 >
@@ -559,14 +562,15 @@ npx cdk deploy --all \
 >
 > With `supply-chain`, we install Claude Code from a committed, version-pinned lockfile (`@anthropic-ai/claude-code@2.1.301`). We run `npm ci` and enforce `npm audit signatures` to verify cryptographic package signatures against the npm registry before running the tool."
 
-**Do:**
-Point out the install phase in the buildspec logs:
-```text
-[Container] Running command npm ci --prefix /opt/robot-root-agent --no-audit --no-fund
-[Container] Running command (cd /opt/robot-root-agent && npm audit signatures)
-audited 1 package in 0.4s
-found 0 vulnerabilities
-```
+**Do (Test the Fix):**
+1. Switch to CodePipeline and click **Release change** (the deploy only changes the pipeline definition; this starts a run that uses it).
+2. Open the **Review → Agent** build log and point out the install phase:
+   ```
+   Running command npm ci --prefix /opt/robot-root-agent --no-audit --no-fund
+   ```
+   ```
+   Running command (cd /opt/robot-root-agent && npm audit signatures)
+   ```
 
 ---
 
@@ -588,6 +592,12 @@ npx cdk deploy --all \
 >
 > In CodePipeline, look at the **Build** stage now. Alongside our `Test` action, there is a new action called `PolicyGate`."
 
+**Do (Test the Fix):**
+1. In CodePipeline, open the **Build** stage and point out the new **PolicyGate** action alongside **Test**. It appears as soon as the deploy finishes.
+2. Click **Release change** to run the fully hardened pipeline end to end. Show that it's clean: the agent reviews under all four guardrails with zero tool calls and no tripwire, and **PolicyGate** passes (green) on this normal commit.
+
+That clean pass sets up Segment 4, where the same gate blocks a commit that widens permissions.
+
 ---
 
 ### Segment 4 — Show the Policy Gate in Action (40:00 – 48:00)
@@ -599,28 +609,22 @@ Now demonstrate how the policy-as-code gate protects the pipeline against develo
 Suppose a well-meaning developer encounters a permissions issue or an attacker modifies the CDK code to grant `iam:*` to the agent role.
 
 **Do:**
-In your terminal, edit `infra/lib/agent-access.ts` to add a wildcard policy:
+Apply the patch that ships in the repo — it adds a wildcard IAM policy to the `least-privilege` branch of `infra/lib/agent-access.ts`:
 
 ```bash
-# Insert a wildcard IAM policy into infra/lib/agent-access.ts
-cat << 'EOF' > /tmp/patch.txt
---- a/infra/lib/agent-access.ts
-+++ b/infra/lib/agent-access.ts
-@@ -109,2 +109,6 @@ export class AgentAccess extends Construct {
-       }
-+      this.role.addToPolicy(new iam.PolicyStatement({
-+        actions: ['iam:*'],
-+        resources: ['*'],
-+      }));
-     } else {
-EOF
-git apply /tmp/patch.txt
+cd "$(git rev-parse --show-toplevel)"   # git apply resolves paths from the repo root
+git apply patches/segment4-iam-wildcard.patch
 
-# Stage and commit
 git add infra/lib/agent-access.ts
 git commit -m "fix(iam): temporarily grant iam permissions for debugging"
 git push origin main
 ```
+
+The patch is a committed file on purpose: a hand-typed or copy-pasted unified diff is one stray space away from `git apply` rejecting it on the context lines, so **don't** paste the diff into a heredoc live. Applying the file by path can't be mangled.
+
+The wildcard must land in the `least-privilege` branch (before `} else {`), **not** the `else`: the hardened profile — which PolicyGate synthesizes — runs that branch, so the wildcard appears in the template and the gate catches it. A wildcard in the `else` branch wouldn't be synthesized under hardened and would slip through.
+
+> Need to regenerate the patch (e.g. after the file changes): make the edit in `infra/lib/agent-access.ts`, run `git diff infra/lib/agent-access.ts > patches/segment4-iam-wildcard.patch`, then `git checkout -- infra/lib/agent-access.ts`.
 
 ---
 
