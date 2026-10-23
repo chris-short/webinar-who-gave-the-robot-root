@@ -377,18 +377,18 @@ The deck is `Who-Gave-The-Robot-Root-Webinar.pptx` (11 slides). This runbook sta
 **Do:**
 1. Leave **Slide 3** up as you transition, then switch to your GitHub repository tab. Stay off the deck until the poll closes.
 2. Open `infra/lib/agent-access.ts` and point out ([lines 111–114](https://github.com/chris-short/webinar-who-gave-the-robot-root/blob/main/infra/lib/agent-access.ts#L111-L114)):
-   ```typescript
+   ```
    // "It kept failing with AccessDenied, so we gave it admin."
    this.role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AdministratorAccess'));
    ```
 3. Open `infra/lib/pipeline-stack.ts` and highlight the environment variables ([lines 89-92](https://github.com/chris-short/webinar-who-gave-the-robot-root/blob/main/infra/lib/pipeline-stack.ts#L89-L92)):
-   ```typescript
+   ```
    if (!guardrails.has('least-privilege')) {
      agentEnv.DEPLOY_DB_SECRET_ARN = { value: props.canarySecret.secretArn };
    }
    ```
 4. Open `infra/lib/buildspecs.ts` ([lines 44-48](https://github.com/chris-short/webinar-who-gave-the-robot-root/blob/main/infra/lib/buildspecs.ts#L44-L48))  and `buildspecs.ts` ([lines 66-68](https://github.com/chris-short/webinar-who-gave-the-robot-root/blob/main/infra/lib/buildspecs.ts#L66-L68)):
-   ```bash
+   ```
    curl -fsSL https://claude.ai/install.sh | bash
    claude -p "$(cat /tmp/review-prompt.md)" --dangerously-skip-permissions ...
    ```
@@ -463,35 +463,43 @@ We won't try to trick the model — we'll stand in for a compromised or buggy ag
 
 **Do:**
 ```bash
+cd "$(git rev-parse --show-toplevel)"   # .breakit must be at the repo root; you're likely still in infra/
 touch .breakit
 git add .breakit
 git commit -m "chore: add debug marker"
 git push origin main
 ```
 
+**Say (while you type):**
+> "Here's the change I'm pushing: one empty file called `.breakit`. No code, and no instructions for the agent. It's a switch we built into this demo pipeline. When that file is there, the build makes one call to AWS as the agent, standing in for an agent that's buggy or compromised. Everything else about the pipeline stays exactly the same."
+
 Switch to the **CodePipeline** tab and watch **Source → Build → Review** advance. The **Agent** action starts the `robot-root-agent` project.
 
 #### While the agent runs (filler, 2–3 min)
 
 **Say:**
-> "Let me be straight about what's happening here, because the honesty is the point. I am not going to pretend I jailbroke the model — I tried, and a capable model refuses. That's reassuring, and it's the trap: people see the model behave and decide the permissions don't matter.
+> "Let's follow it through. GitHub has the commit, the tests are running, and then the review starts: CodeBuild launches the agent and hands it the agent's IAM role.
 >
-> But an agent is software. It can have a bug, it can pull a compromised dependency, the next model or prompt may be less careful — and when any of that happens, the only thing between the agent and your production data is its IAM role. So in the before-state build we stand in for exactly that: one out-of-bounds call with the agent's own identity. Watch what the pipeline notices."
+> The agent reviews the change first, and there isn't much to review, just an empty file. Then, because the marker is there, the build makes its one call as that same role: it asks S3 about the bucket that stands in for our production exports.
+>
+> That bucket is a decoy. Nothing in our system ever reads it, so any access at all is suspicious. CloudTrail records every call the agent's role makes, and a rule watching that role is waiting for exactly this.
+>
+> Here's what we should see. In the build log, a line starting with `[breakit]`, and then that call going through with no access-denied error. That's the proof that this role can reach production. A few minutes later, because CloudTrail takes a moment to deliver events, one entry in the tripwire log and one email naming the role and the call. And the pipeline will stop at Approve and wait for a person."
 
 #### Step 3: The out-of-bounds call and the tripwire
 
 **Do:**
-1. In CodePipeline, **Review** stage → **View details** on the **Agent** action → open the build log. Point out the `[breakit] simulating a compromised agent...` line and the single `aws s3api get-bucket-location` call against the production-exports bucket — a call a code reviewer has no business making. (It's one deliberate call, so the tripwire fires exactly once.)
+1. In CodePipeline, **Review** stage → **View details** on the **Agent** action → open the build log. Point out the `[breakit] simulating a compromised agent...` line and the single `aws s3api get-bucket-location` call against the production-exports bucket — a call a code reviewer has no business making. (It's one deliberate call, so the tripwire fires exactly once.) The call prints `"LocationConstraint": null`. That's success, not an error: S3 reports a null location for buckets in us-east-1.
 2. Switch to the **CloudWatch Logs** tab → `/robot-root/tripwire` → newest stream. Show the audit event: `robot-root-agent` calling `s3.amazonaws.com` against the canary `prod-exports` bucket.
 3. Switch to the **Email** tab → the `Robot root tripwire: ...` alert.
 
 **Say:**
-> "There it is. The agent's identity reached into the bucket that stands in for production exports, and the tripwire fired — CloudTrail event, log line, and email within a couple of minutes. We did not need the model to cooperate; we only needed its role to be able to do this at all. And as Step 1 showed, that same identity can write to the release bucket, too."
+> "There it is. The agent's identity reached into the bucket that stands in for production exports, and the tripwire fired — CloudTrail event, log line, and email within a couple of minutes. We did not need the model to cooperate; we only needed its role to be able to do this at all. And as we saw a few minutes ago, that same identity can write to the release bucket, too."
 
 #### Step 4: The approval gate is theater
 
 **Say:**
-> "Notice the pipeline is parked at Approve. Teams tell themselves wide agent access is fine because a human signs off before deploy. Step 1 already broke that: with admin, the agent can write to the release bucket directly and skip this gate entirely. Approval only means something once the agent cannot route around it. Reject this run."
+> "Notice the pipeline is parked at Approve. Teams tell themselves wide agent access is fine because a human signs off before deploy. We already saw why that doesn't hold: with admin, the agent can write to the release bucket directly and skip this gate entirely. Approval only means something once the agent cannot route around it. Reject this run."
 
 **Do:** Click **Reject** on the manual approval action in CodePipeline.
 
@@ -543,7 +551,7 @@ npx cdk deploy --all -c githubRepo=$REPO -c alertEmail=$ALERT_EMAIL -c guardrail
 3. Open the Agent action logs. The `[breakit]` step still runs, but the `aws s3api get-bucket-location` call now prints `AccessDenied` — the role can only call Bedrock. The exfiltration fails. The tripwire may still log the *blocked* attempt; that's detection of a prevented breach, not a successful one.
 
 **Say:**
-> "There's the flip I promised in Segment 2 — the same identity can no longer write to the release bucket, and the out-of-bounds read comes back AccessDenied. IAM turned a successful breach into a blocked one. But look closer: the agent still has a shell — it still ran those commands, it just had nothing it was allowed to reach. IAM is necessary; on its own it's not enough. That's guardrail two."
+> "There's the flip I promised earlier — the same identity can no longer write to the release bucket, and the out-of-bounds read comes back AccessDenied. IAM turned a successful breach into a blocked one. But look closer: the agent still has a shell — it still ran those commands, it just had nothing it was allowed to reach. IAM is necessary; on its own it's not enough. That's guardrail two."
 
 ---
 
@@ -580,7 +588,7 @@ npx cdk deploy --all \
    - Show `===== Agent review =====`: the agent reads the diff and returns a verdict.
 
 **Say:**
-> "Notice the shift: we did not write a cleverer prompt. We took away the agent's ability to run anything. The `.breakit` marker is still sitting right there in the repo — but with no `Bash` tool, there is no step to run it and nothing to reach AWS with. Zero tool calls. We removed the capability, not the temptation. Permissions and tools are the control; the prompt is not."
+> "Notice the shift: we did not write a cleverer prompt. We took away the agent's ability to run anything. The `.breakit` marker is still sitting right there in the repo — but with no `Bash` tool, there's nothing in the build to run it and nothing to reach AWS with. Zero tool calls. We removed the capability, not the temptation. Permissions and tools are the control; the prompt is not."
 
 ---
 
@@ -803,21 +811,24 @@ Follow this section to rehearse the entire demo before the webinar and reset it 
    npx cdk deploy --all -c githubRepo=$REPO -c alertEmail=$ALERT_EMAIL -c agentProfile=overprivileged --require-approval never
    ```
 2. Verify `main` is clean: `git status`.
-3. Arm the marker from Segment 2 (Step 2): `touch .breakit && git add .breakit && git commit -m "chore: add debug marker" && git push`.
+3. Arm the marker from Segment 2 (Step 2), from the repo root: `cd "$(git rev-parse --show-toplevel)" && touch .breakit && git add .breakit && git commit -m "chore: add debug marker" && git push origin main`.
 4. Verify the tripwire alert email arrives and the `[breakit]` out-of-bounds call appears in the Agent build log.
 5. Apply the four guardrails sequentially from Segment 3 (`least-privilege` -> `agent-policy` -> `supply-chain` -> `hardened`).
 6. Apply the Policy-Gate break commit from Segment 4. Verify `PolicyGate` fails.
-7. Revert the commits.
+7. Run the **Clean Reset to Baseline** below. It removes `.breakit` and the `iam:*` patch commit along with everything else you pushed during the rehearsal.
 
 ### Clean Reset to Baseline (After Rehearsal)
 
 Run these exact commands to return the repository and AWS environment to the exact starting state:
 
 ```bash
-# 1. Reset Git repository to clean origin/main
+# 1. Reset main to the demo-baseline tag. Resetting to origin/main is NOT enough: the
+#    .breakit marker and the iam:* patch commit were pushed, so origin/main still has them.
+cd "$(git rev-parse --show-toplevel)"
 git checkout main
-git reset --hard origin/main
+git reset --hard demo-baseline
 git clean -fd
+git push --force origin main   # rewrites main on GitHub; fine for your personal demo repo
 
 # 2. Redeploy overprivileged baseline in AWS
 cd infra
@@ -841,7 +852,7 @@ Keep this table visible on a second screen or printed beside your keyboard durin
 |---|---|---|---|---|
 | **Opening** | 00:00–05:00 | 1 → 2 → 3 | Deck in slideshow mode | *"Who gave the robot root? We did — on purpose, one shortcut at a time."* |
 | **Segment 1** | 05:00–12:00 | GitHub, then 4 | Show `agent-access.ts` & launch poll; back to deck for the reveal | Point out line 111 (`AdministratorAccess`), launch poll. |
-| **Segment 2** | 12:00–22:00 | 5 → 6, then terminal/console | Simulate role (PutObject=allowed); `touch .breakit` & push | Before-state build makes one out-of-bounds `aws s3api get-bucket-location` call as the agent role (one alarm); show the build log, tripwire log, email. Reject approval! |
+| **Segment 2** | 12:00–22:00 | 5 → 6, then terminal/console | Simulate role (PutObject=allowed); from the repo root, `touch .breakit` & push | Before-state build makes one out-of-bounds `aws s3api get-bucket-location` call as the agent role (one alarm); show the build log, tripwire log, email. Reject approval! |
 | **Segment 3A** | 22:00–26:00 | 7, then terminal | Deploy `-c guardrails=least-privilege`<br>Re-run simulate; **Release change** | Simulate flips to `implicitDeny`; the `[breakit]` call now returns AccessDenied (blocked, still detected). Shell still runs. |
 | **Segment 3B** | 26:00–31:00 | terminal | Deploy `-c guardrails=least-privilege,agent-policy`<br>Click **Release change** | Zero tool calls! No shell, so the `.breakit` step isn't even in the build; the agent just reviews the diff. |
 | **Segment 3C** | 31:00–35:00 | terminal | Deploy `-c guardrails=...,supply-chain`<br>Click **Release change** | Lockfile pinned (`@anthropic-ai/claude-code@2.1.301`) + `npm audit signatures`. |
