@@ -322,23 +322,49 @@ If that identity holds cloud administrator credentials and the runtime has a she
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Slide Map
+
+The deck is `Who-Gave-The-Robot-Root-Webinar.pptx` (11 slides). This runbook stays on your second monitor; the audience only ever sees the deck, GitHub, your terminal, and the AWS console. Cues in the segments below look like **→ Slide N**.
+
+| Slide | Title | When |
+|---|---|---|
+| 1 | Who gave the robot root? | Opening: welcome |
+| 2 | Someone gave the robot root on purpose… | Opening: the question |
+| 3 | Inside the pipeline | Opening: what we'll look at |
+| – | *GitHub + poll tool* | Segment 1: walk the code, run the poll |
+| 4 | Four risks, hiding in plain sight | Segment 1: poll reveal |
+| 5 | We won't jailbreak the model | Segment 2: framing |
+| 6 | Terminal: `simulate-principal-policy` | Segment 2, Step 1: run it live, or talk over this as a fallback |
+| – | *Terminal, CodePipeline, CloudWatch, email* | Segment 2, Steps 2–4 |
+| 7 | Four guardrails, added one at a time | Segment 3: roadmap |
+| – | *Terminal + CodePipeline* | Segments 3A–3D and Segment 4 |
+| 8 | Before: overprivileged / After: hardened | Closing |
+| 9 | Defense in depth | Closing |
+| 10 | Your homework: ask of every agent | Closing |
+| 11 | Thank you | Q&A |
+
 ---
 
 ### Opening (00:00 – 05:00)
 
 **Do:**
-- Share your screen showing the pipeline architecture diagram from the top of this runbook.
+- Share your screen with the deck in slideshow mode.
+- **→ Slide 1** (title) while you welcome people. The two cues in the talk track below move you to Slides 2 and 3.
 
 **Say:**
 > "Welcome everyone to *Who gave the robot root? Securing AI agents in your pipelines*.
 >
 > Over the past year, many engineering organizations have started embedding AI agents into their software delivery lifecycles. We have agents that triage issues, review pull requests, generate release notes, and even fix broken builds.
 >
+> ***→ Slide 2***
+>
 > ​But here is the elephant in the room: What identity do these agents run under? What permissions do they have?
 >
 > ​In real organizations, the story goes kinda like this: An engineer is told to add an AI reviewer to CodePipeline or GitHub Actions. They wire it up, it fails with `AccessDenied`, and after the third failed build, they attach `AdministratorAccess` so it 'just works.'
 > 
 > In fact, in the actual codebase we are looking at today, there is a comment that says verbatim: *'It kept failing with AccessDenied, so we gave it admin.'*
+>
+> ***→ Slide 3***
 >
 > ​Today, we'll look at a real, live CI/CD pipeline running in AWS. An autonomous AI agent, Claude Code running on Bedrock, reviews every change. We'll see what that over-privileged agent's identity can reach, watch a tripwire catch it, and talk about why a model that behaves today is no guarantee tomorrow — then systematically lock it down with four engineering guardrails until a permission-widening change is stopped dead in its tracks.
 >
@@ -349,7 +375,7 @@ If that identity holds cloud administrator credentials and the runtime has a she
 ### Segment 1 — Spot the Over-Privileged Agent (05:00 – 12:00)
 
 **Do:**
-1. Switch to your code editor or GitHub repository tab.
+1. Leave **Slide 3** up as you transition, then switch to your GitHub repository tab. Stay off the deck until the poll closes.
 2. Open `infra/lib/agent-access.ts` and point out ([lines 111–114](https://github.com/chris-short/webinar-who-gave-the-robot-root/blob/main/infra/lib/agent-access.ts#L111-L114)):
    ```typescript
    // "It kept failing with AccessDenied, so we gave it admin."
@@ -368,36 +394,53 @@ If that identity holds cloud administrator credentials and the runtime has a she
    ```
 5. Launch the **Audience Poll**.
 
-#### Interactive Audience Poll (Slide/Mentimeter)
+#### Interactive Audience Poll (poll tool, no slide)
 
-**Poll Question:**
-*"Looking at this agent configuration, how many security risks can you spot?"*
+**Set up the poll ahead of time** in your poll tool (Slido, Mentimeter, Zoom polls) as **multi-select**, "select all that apply." Show results as a bar per option, not a single winner. If the tool can shuffle the option order, turn that on so A doesn't get picked just for being first.
+
+All four options are real risks. There's deliberately no "all of the above": the point is to see which risks people *miss*.
+
+**Poll question:**
+*"Which of these security risks do you see in this agent's setup? Select all that apply."*
 
 **Options:**
-- **A)** The agent IAM role has `AdministratorAccess` and plaintext secret references in its environment.
-- **B)** The agent runs with `--dangerously-skip-permissions` and full `Bash` execution privileges.
-- **C)** The agent binary is downloaded at runtime via unverified `curl | bash`.
-- **D)** There is no automated policy gate checking whether future commits weaken permissions.
-- **E)** All of the above (The "Full Root" Special). *(Correct Answer)*
+- **A)** The agent's IAM role has `AdministratorAccess`, and a production secret reference sits in its environment.
+- **B)** The agent runs with `--dangerously-skip-permissions`, so it can run shell commands without anyone approving them.
+- **C)** The agent is installed at runtime with `curl | bash`, at whatever version is current that day, with nothing verified.
+- **D)** Nothing checks whether a future change to these files weakens any of the above.
 
-**Say:**
-> "Take 30 seconds to vote. Which of these issues would block this pipeline in your organization's security review?
+**Say (while the poll is open):**
+> "Take about thirty seconds. Select every one you think is a real problem — if it would block this pipeline in your own security review, pick it."
+
+**Glance at which bars are tall and which are short, then use the line that matches.** No numbers needed.
+
+- **Most likely: A is tall, C and/or D are short.**
+  > "Almost everyone caught the admin role. That makes sense; we've spent a decade learning to look at IAM first. But a lot fewer of you flagged the `curl | bash` install, or the fact that nothing checks future changes. Those are the ones that bite. Even with a perfect IAM role, this agent runs whatever script the internet serves that day, on a machine holding your credentials — and nothing stops tomorrow's commit from quietly undoing today's fix."
+- **If B is clearly shorter than A:**
+  > "Fewer of you picked `--dangerously-skip-permissions`. It's the flag teams add when permission prompts break in CI. What it actually means is that the agent runs shell commands and nobody approves them."
+- **If all four bars are tall:**
+  > "You're a tough crowd — most of you selected all four. And you're right: every one of them is real, and every one shows up in real pipelines."
+- **If votes are thin:**
+  > "Votes are still trickling in, so let me just walk through them."
+
+**Then:**
+> ***→ Back to the deck: Slide 4***
 >
-> ... I see the votes coming in. Many people immediately jump to option A—IAM permissions. And that's natural! We've been trained for a decade on AWS IAM.
->
-> But look closely at B and C. Even if you fixed IAM, the agent is executing shell commands without confirmation (`--dangerously-skip-permissions`), and the runtime itself is pulled live from the internet with `curl | bash` without cryptographic pinning. And look at D: if an engineer changes these files tomorrow, what catches it?
->
-> The correct answer is **E: All of the above**. Let's see what this over-privileged robot does on an ordinary change."
+> "All four are real. Each one maps to one of the four guardrails we'll turn on in a few minutes, and to the four questions I'll leave you with at the end. Now let's see what an identity like this can actually reach."
 
 ---
 
 ### Segment 2 — Break It (12:00 – 22:00)
+
+**→ Slide 5** ("We won't jailbreak the model. We don't need to.") while you frame this segment.
 
 The real risk here is not that someone jailbreaks the agent on stage. A capable model like Opus 4.5 reliably refuses injected instructions in the code it reviews, and it won't fire off a wild AWS call just because a prompt nudges it. That is good news — and it is exactly the trap: teams watch the model behave and conclude the access doesn't matter. But an agent is software. It can carry a bug, pull a poisoned dependency, or be driven by a future model or prompt that is less careful, and then the only thing between it and production is its IAM role. We show both halves: what the identity is *allowed* to do (deterministic), and the tripwire catching that identity the moment it steps out of bounds (live).
 
 #### Step 1: Show the blast radius directly (deterministic, no model)
 
 Before touching the pipeline, show what the agent's identity is *allowed* to do. This never varies run to run.
+
+**→ Slide 6** shows this exact command and its result. Run it live in your terminal; if the terminal is slow or your AWS session has expired, talk over Slide 6 instead. From here until Segment 3 you're in the terminal and the AWS console, not the deck.
 
 **Do:**
 ```bash
@@ -438,7 +481,7 @@ Switch to the **CodePipeline** tab and watch **Source → Build → Review** adv
 #### Step 3: The out-of-bounds call and the tripwire
 
 **Do:**
-1. In CodePipeline, **Review** stage → **View details** on the **Agent** action → open the build log. Point out the `[breakit] simulating a compromised agent...` line and the `aws s3 ls` of the production-exports bucket — a call a code reviewer has no business making.
+1. In CodePipeline, **Review** stage → **View details** on the **Agent** action → open the build log. Point out the `[breakit] simulating a compromised agent...` line and the single `aws s3api get-bucket-location` call against the production-exports bucket — a call a code reviewer has no business making. (It's one deliberate call, so the tripwire fires exactly once.)
 2. Switch to the **CloudWatch Logs** tab → `/robot-root/tripwire` → newest stream. Show the audit event: `robot-root-agent` calling `s3.amazonaws.com` against the canary `prod-exports` bucket.
 3. Switch to the **Email** tab → the `Robot root tripwire: ...` alert.
 
@@ -457,6 +500,8 @@ Switch to the **CodePipeline** tab and watch **Source → Build → Review** adv
 ### Segment 3 — Fix It, One Guardrail at a Time (22:00 – 40:00)
 
 Now demonstrate defense-in-depth by turning on each guardrail one by one and re-running the same review against each tighter configuration.
+
+**→ Slide 7** (Four guardrails) as the roadmap, then go to your terminal and CodePipeline for 3A–3D. You can flash back to Slide 7 between steps to show where you are.
 
 ---
 
@@ -495,7 +540,7 @@ npx cdk deploy --all -c githubRepo=$REPO -c alertEmail=$ALERT_EMAIL -c guardrail
    
    **See:** `s3:PutObject  implicitDeny`.
 2. Switch to CodePipeline and click **Release change** (`.breakit` is still on `main`, so the before-state build still attempts the out-of-bounds call).
-3. Open the Agent action logs. The `[breakit]` step still runs, but every `aws s3 ls` now prints `AccessDenied` — the role can only call Bedrock. The exfiltration fails. The tripwire may still log the *blocked* attempt; that's detection of a prevented breach, not a successful one.
+3. Open the Agent action logs. The `[breakit]` step still runs, but the `aws s3api get-bucket-location` call now prints `AccessDenied` — the role can only call Bedrock. The exfiltration fails. The tripwire may still log the *blocked* attempt; that's detection of a prevented breach, not a successful one.
 
 **Say:**
 > "There's the flip I promised in Segment 2 — the same identity can no longer write to the release bucket, and the out-of-bounds read comes back AccessDenied. IAM turned a successful breach into a blocked one. But look closer: the agent still has a shell — it still ran those commands, it just had nothing it was allowed to reach. IAM is necessary; on its own it's not enough. That's guardrail two."
@@ -604,6 +649,8 @@ That clean pass sets up Segment 4, where the same gate blocks a commit that wide
 
 Now demonstrate how the policy-as-code gate protects the pipeline against developers or rogue agents attempting to loosen permissions.
 
+No slide for this segment. Stay in your terminal and CodePipeline.
+
 #### Step 1: The Malicious Infrastructure Commit
 
 Suppose a well-meaning developer encounters a permissions issue or an attacker modifies the CDK code to grant `iam:*` to the agent role.
@@ -675,7 +722,7 @@ The pipeline triggers again and runs cleanly through `PolicyGate` and `Test`.
 ### Closing Takeaways (48:00 – 55:00)
 
 **Do:**
-- Show the Before vs After comparison slide or table below.
+- **→ Slide 8** (Before / After). The table below is the same comparison, for reference. The cues in the talk track move you through Slides 9, 10, and 11.
 
 | Axis | Before (Overprivileged) | After (Hardened) |
 |---|---|---|
@@ -691,6 +738,12 @@ The pipeline triggers again and runs cleanly through `PolicyGate` and `Test`.
 >
 > In reality, someone did decide to give the robot root — not maliciously, but on purpose. Every step was the easy, reasonable-looking choice in the moment: an `AccessDenied` error fixed with an admin policy; a developer adding `--dangerously-skip-permissions` because permission prompts were annoying in CI; an install script curled from the web to save time. Nobody was being reckless. They just never went back and took the access away.
 >
+> ***→ Slide 9***
+>
+> And there's no single point of trust in the fix. Four guardrails we added, plus two safety nets that stayed on the whole time: a permissions boundary that caps what the role can ever do, and a tripwire that fires the moment the agent reaches for something it shouldn't. Six layers. If one fails, the others still hold.
+>
+> ***→ Slide 10***
+>
 > When you leave today, take four homework questions back to your engineering team:
 >
 > 1. **What can your pipeline agent's IAM role actually do?** If it reviews PRs, why does it have permissions to create S3 buckets, read secrets, or modify VPCs?
@@ -700,11 +753,15 @@ The pipeline triggers again and runs cleanly through `PolicyGate` and `Test`.
 >
 > Remember: Prompts are guidance. Cloud permissions, tool restrictions, and policy gates are controls.
 >
+> ***→ Slide 11***
+>
 > Thank you for your time, and let's open the floor for questions."
 
 ---
 
 ### Interactive Q&A Track (55:00 – 60:00)
+
+Leave **Slide 11** (Thank you) up during Q&A.
 
 Here are the most common questions attendees ask during this session and how to answer them:
 
@@ -780,18 +837,18 @@ aws logs delete-log-stream --log-group-name /robot-root/tripwire --log-stream-na
 
 Keep this table visible on a second screen or printed beside your keyboard during the live session.
 
-| Segment | Timing | What to Do (Terminal / Console) | Key Talking Point / Highlight |
-|---|---|---|---|
-| **Opening** | 00:00–05:00 | Show architecture diagram | *"Who gave the robot root? We did — on purpose, one shortcut at a time."* |
-| **Segment 1** | 05:00–12:00 | Show `agent-access.ts` & Launch Poll | Point out line 111 (`AdministratorAccess`), launch poll. |
-| **Segment 2** | 12:00–22:00 | Simulate role (PutObject=allowed); `touch .breakit` & push | Before-state build makes an out-of-bounds `aws s3 ls` as the agent role; show the build log, tripwire log, email. Reject approval! |
-| **Segment 3A** | 22:00–26:00 | Deploy `-c guardrails=least-privilege`<br>Re-run simulate; **Release change** | Simulate flips to `implicitDeny`; the `[breakit]` call now returns AccessDenied (blocked, still detected). Shell still runs. |
-| **Segment 3B** | 26:00–31:00 | Deploy `-c guardrails=least-privilege,agent-policy`<br>Click **Release change** | Zero tool calls! No shell, so the `.breakit` step isn't even in the build; the agent just reviews the diff. |
-| **Segment 3C** | 31:00–35:00 | Deploy `-c guardrails=...,supply-chain`<br>Click **Release change** | Lockfile pinned (`@anthropic-ai/claude-code@2.1.301`) + `npm audit signatures`. |
-| **Segment 3D** | 35:00–40:00 | Deploy `-c agentProfile=hardened` | All 4 on. `PolicyGate` action appears in Build stage. |
-| **Segment 4** | 40:00–48:00 | Add `iam:*` to `agent-access.ts`; `git push`<br>Then: `git revert --no-edit HEAD && git push` | `PolicyGate` fails on `no_wildcard_actions`. Change never reaches Review or Approve! |
-| **Closing** | 48:00–55:00 | Show Before/After table | 4 Homework questions: IAM, Tools, Supply Chain, Policy Gate. |
-| **Q&A** | 55:00–60:00 | Refer to Part 4 Q&A bank | Prompts are guidance; permissions are controls. |
+| Segment | Timing | Slide | What to Do (Terminal / Console) | Key Talking Point / Highlight |
+|---|---|---|---|---|
+| **Opening** | 00:00–05:00 | 1 → 2 → 3 | Deck in slideshow mode | *"Who gave the robot root? We did — on purpose, one shortcut at a time."* |
+| **Segment 1** | 05:00–12:00 | GitHub, then 4 | Show `agent-access.ts` & launch poll; back to deck for the reveal | Point out line 111 (`AdministratorAccess`), launch poll. |
+| **Segment 2** | 12:00–22:00 | 5 → 6, then terminal/console | Simulate role (PutObject=allowed); `touch .breakit` & push | Before-state build makes one out-of-bounds `aws s3api get-bucket-location` call as the agent role (one alarm); show the build log, tripwire log, email. Reject approval! |
+| **Segment 3A** | 22:00–26:00 | 7, then terminal | Deploy `-c guardrails=least-privilege`<br>Re-run simulate; **Release change** | Simulate flips to `implicitDeny`; the `[breakit]` call now returns AccessDenied (blocked, still detected). Shell still runs. |
+| **Segment 3B** | 26:00–31:00 | terminal | Deploy `-c guardrails=least-privilege,agent-policy`<br>Click **Release change** | Zero tool calls! No shell, so the `.breakit` step isn't even in the build; the agent just reviews the diff. |
+| **Segment 3C** | 31:00–35:00 | terminal | Deploy `-c guardrails=...,supply-chain`<br>Click **Release change** | Lockfile pinned (`@anthropic-ai/claude-code@2.1.301`) + `npm audit signatures`. |
+| **Segment 3D** | 35:00–40:00 | terminal | Deploy `-c agentProfile=hardened`<br>Click **Release change** | All 4 on. `PolicyGate` action appears in Build stage and passes. |
+| **Segment 4** | 40:00–48:00 | terminal | `git apply patches/segment4-iam-wildcard.patch`; commit & push<br>Then: `git revert --no-edit HEAD && git push` | `PolicyGate` fails on `no_wildcard_actions`. Change never reaches Review or Approve! |
+| **Closing** | 48:00–55:00 | 8 → 9 → 10 | Back to the deck | Six layers, no single point of trust; 4 homework questions. |
+| **Q&A** | 55:00–60:00 | 11 | Refer to Part 4 Q&A bank | Prompts are guidance; permissions are controls. |
 
 ---
 

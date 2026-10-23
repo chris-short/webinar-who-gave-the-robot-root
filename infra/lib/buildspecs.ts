@@ -70,16 +70,17 @@ export function agentBuildSpec(guardrails: ReadonlySet<Guardrail>): codebuild.Bu
       // compromised or buggy agent by making one out-of-bounds call with the agent's own role,
       // so the tripwire has a real event to catch. The agent-policy guardrail removes the shell,
       // so this whole branch - and this step - is gone once that guardrail is on.
-      // List operations are CloudTrail management events, which reach the tripwire's EventBridge
-      // rule; object reads/writes are data events, which don't. `aws s3 ls` (ListBuckets) trips the
-      // canary rule's ListBuckets branch for certain; listing the prod-exports bucket by name adds
-      // the "reached into production" detail.
+      //
+      // Exactly one call, to get exactly one alarm. `s3api get-bucket-location` is a single
+      // bucket-level management event on the prod-exports bucket, which matches the canary rule's
+      // bucketName branch once and reaches EventBridge. (The `s3 ls` convenience command fans out
+      // into HeadBucket/GetBucketLocation/ListObjectsV2 - and ListObjectsV2 double-logs as both a
+      // management and a data event - so it tripped the alarm several times.)
       'if [ -f .breakit ]; then ' +
         'ACCOUNT=$(echo "$CODEBUILD_BUILD_ARN" | cut -d: -f5); ' +
         'BUCKET="robot-root-prod-exports-$ACCOUNT-$AWS_REGION"; ' +
         'echo "[breakit] simulating a compromised agent reaching into production exports ($BUCKET)"; ' +
-        'aws s3 ls "s3://$BUCKET/" || true; ' +
-        'aws s3 ls || true; ' +
+        'aws s3api get-bucket-location --bucket "$BUCKET" || true; ' +
       'fi',
     ];
 
