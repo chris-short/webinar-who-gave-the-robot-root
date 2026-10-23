@@ -478,7 +478,7 @@ Switch to the **CodePipeline** tab and watch **Source → Build → Review** adv
 #### While the agent runs (filler, 2–3 min)
 
 **Say:**
-> "Let's follow it through. GitHub has the commit, the tests are running, and then the review starts: CodeBuild launches the agent and hands it the agent's IAM role.
+> "Let's follow it through. GitHub has the commit, the build and tests are running, and then the review starts: CodeBuild launches the agent and hands it the agent's IAM role.
 >
 > The agent reviews the change first, and there isn't much to review, just an empty file. Then, because the marker is there, the build makes its one call as that same role: it asks S3 about the bucket that stands in for our production exports.
 >
@@ -588,7 +588,7 @@ npx cdk deploy --all \
    - Show `===== Agent review =====`: the agent reads the diff and returns a verdict.
 
 **Say:**
-> "Notice the shift: we did not write a cleverer prompt. We took away the agent's ability to run anything. The `.breakit` marker is still sitting right there in the repo — but with no `Bash` tool, there's nothing in the build to run it and nothing to reach AWS with. Zero tool calls. We removed the capability, not the temptation. Permissions and tools are the control; the prompt is not."
+> "Notice the shift: we did not write a more clever prompt. We took away the agent's ability to run anything. The `.breakit` marker is still sitting right there in the repo — but with no `Bash` tool, there's nothing in the build to run it and nothing to reach AWS with. Zero tool calls. We removed the capability, not the temptation. Permissions and tools are the control; the prompt is not."
 
 ---
 
@@ -675,6 +675,13 @@ git commit -m "fix(iam): temporarily grant iam permissions for debugging"
 git push origin main
 ```
 
+**Say (while you apply and push):**
+> "All four guardrails are on. But every one of them is just code in this repository, the same as the app. So what stops someone from quietly loosening them?
+>
+> Think back to where we started: it failed with AccessDenied, so somebody gave it admin. Here's that moment again. Maybe it's a developer chasing an error at five o'clock, maybe it's an agent with commit access fixing its own permissions. Either way, the change is one line: let the agent do anything in IAM, on anything. That's permission to rewrite its own permissions. And the commit message says 'temporarily, for debugging', which is how these always start.
+>
+> I'm pushing it to main, the normal way. Before any review happens, the Build stage now runs a policy check against the infrastructure this commit would produce. Let's watch what it does with it."
+
 The patch is a committed file on purpose: a hand-typed or copy-pasted unified diff is one stray space away from `git apply` rejecting it on the context lines, so **don't** paste the diff into a heredoc live. Applying the file by path can't be mangled.
 
 The wildcard must land in the `least-privilege` branch (before `} else {`), **not** the `else`: the hardened profile — which PolicyGate synthesizes — runs that branch, so the wildcard appears in the template and the gate catches it. A wildcard in the `else` branch wouldn't be synthesized under hardened and would slip through.
@@ -730,7 +737,7 @@ The pipeline triggers again and runs cleanly through `PolicyGate` and `Test`.
 ### Closing Takeaways (48:00 – 55:00)
 
 **Do:**
-- **→ Slide 8** (Before / After). The table below is the same comparison, for reference. The cues in the talk track move you through Slides 9, 10, and 11.
+- **→ Slide 8** (Before / After). The table below is the same comparison, for reference. The cues in the talk track move you through Slides 9, 10, and 11. **Continue in the slides**, the Say: is here just in case.
 
 | Axis | Before (Overprivileged) | After (Hardened) |
 |---|---|---|
